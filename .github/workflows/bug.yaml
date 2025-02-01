@@ -1,0 +1,110 @@
+name: Bug
+
+env:
+  DEBUG: napi:*
+  APP_NAME: 'rs-compiler'
+  MACOSX_DEPLOYMENT_TARGET: '10.13'
+  CARGO_INCREMENTAL: '1'
+permissions:
+  contents: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+
+jobs:
+  test:
+    name: Test
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            architecture: x64
+        node:
+          - '20'
+    runs-on: ${{ matrix.settings.host }}
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        id: pnpm-install
+        with:
+          version: 9.9.0
+
+      - uses: actions/setup-node@v4
+        name: Install Node.js
+        with:
+          node-version: 20.17.0
+          cache: 'pnpm'
+          architecture: ${{ matrix.settings.architecture }}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          pnpm install --recursive --frozen-lockfile --link-workspace-packages
+      - name: List files
+        run: |
+              ls .
+              ls src
+
+      - name: Run benchmarks
+        run: pnpm run --filter @stylexswc/rs-compiler test
+  benchmark:
+    name: 📊 Benchmark on ${{ matrix.settings.target }} - node@${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            architecture: x64
+        node:
+          - '20'
+    runs-on: ${{ matrix.settings.host }}
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
+    steps:
+      - name: Enable long path support
+        run: git config --system core.longpaths true
+        if: ${{ matrix.settings.host == 'windows-latest' }}
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        id: pnpm-install
+        with:
+          version: 9.9.0
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+          architecture: ${{ matrix.settings.architecture }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # - name: Download artifacts
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: bindings-${{ matrix.settings.target }}
+      #     path: crates/stylex-rs-compiler/dist
+      # - name: Download previous benchmark data
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: ./cache
+      #     key: ${{ matrix.settings.target }}-benchmark-${{ github.ref }}
+      #     restore-keys: |
+      #       ${{ matrix.settings.target }}-benchmark-
+      - name: Run benchmarks
+        run: pnpm run --filter @stylexswc/rs-compiler bench
